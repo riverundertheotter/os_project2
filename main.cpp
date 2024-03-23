@@ -92,11 +92,34 @@ int CheckArgs(int argc, char*argv[]) {
 	return 0;
 }
 
+void PetersenAlgo(){
+
+}
+
+void TournamentTree() {
+
+}
+
+void TestAndSet() {
+
+}
+
+void FetchAndIncrement() {
+
+}
+
 int main(int argc, char *argv[]) {
 	int args_valid = CheckArgs(argc, argv);
 	if (args_valid == 1) {
 		return 1;
 	}
 	
+	switch(argv) {
+		case 0: TournamentTree();
+		case 1: Test_And_Set();
+		case 2: Fetch_And_Increment();
+	}
+
+
 	return 0;
 }
