@@ -72,3 +72,31 @@
  * turn = turn + 1;
  * ----------------------------------------------------------------------------
  */
+
+#include <iostream>
+#include <cstlib>
+
+// checks validity of args
+int CheckArgs(int argc, char*argv[]) {
+	// right num of arguments?
+	if (argc != 3) {
+		std::cout << "Usage: main <algorithm_type (int)> <nthreads(int)>\n";
+		return 1;
+	}
+	// valid argument type?
+	if (std::atoi(argv[1]) < 0 || std::atoi(argv[1]) > 2) {
+		std::cout << "Algorithm choices\n0: Test Tree\n1: Test and Set\
+			n2:Fetch and Increment\n";
+		return 1;
+	}
+	return 0;
+}
+
+int main(int argc, char *argv[]) {
+	int args_valid = CheckArgs(argc, argv);
+	if (args_valid == 1) {
+		return 1;
+	}
+	
+	return 0;
+}
