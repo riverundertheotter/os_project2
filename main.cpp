@@ -80,6 +80,7 @@
 #include <vector>
 #include <cmath>
 #include <memory>
+#include "make_unique_polyfill.h"
 
 class PetersonLock {
 public: 
@@ -99,6 +100,7 @@ public:
 		turn = thread_id % 2;
 		while (flag[other] && turn == thread_id % 2) {
 			// busy wait
+			std::this_thread::yield();
 		}
 	}
 
@@ -120,7 +122,7 @@ public:
 		int depth = std::ceil(std::log2(n));
 		int size = std::pow(2, depth + 1) - 1; //
 		for (int i = 0; i < size; i++) {
-			tree.push_back(std::make_unique<PetersonLock>()); // create PetersonLock instances
+			tree.push_back(make_unique<PetersonLock>()); // create PetersonLock instances
 		}
 		height = depth;
 	}
@@ -161,7 +163,7 @@ public:
 		// spin wait loop
 		while (!flag.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
 			expected = false; // reset expected since modified by compare_exchange_strong
-			std::this_thread::yield(); // hint to reschedule to avoid busy waiting
+			std::this_thread::yield();
 		}
 	}
 
@@ -196,8 +198,8 @@ void critical_sectionFAI(int thread_id, FetchAndIncrement& lock) {
 	std::cout << "Thread " << thread_id << " has secured lock.\n";
 	// critical section
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-	lock.unlock();
 	std::cout << "Thread " << thread_id << " has released lock.\n";
+	lock.unlock();
 }
 
 void critical_sectionTAS(int thread_id, TestAndSet& lock) {
@@ -205,19 +207,17 @@ void critical_sectionTAS(int thread_id, TestAndSet& lock) {
 	std::cout << "Thread " << thread_id << " has secured lock.\n";
 	// critical section
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-	lock.unlock();
 	std::cout << "Thread " << thread_id << " has released lock.\n";
+	lock.unlock();
 }
 
 void critical_sectionTT(int thread_id, TournamentTree& tree) {
 	tree.lock(thread_id);
-	std::cout << "Thread " << thread_id << " locked.\n";
-
+	std::cout << "Thread " << thread_id << " has acquired lock.\n";
 	// critical section
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-
+	std::cout << "Thread " << thread_id << " is returning the lock.\n";
 	tree.unlock(thread_id);
-	std::cout << "Thread " << thread_id << " has released lock.\n";
 }
 
 // checks validity of args
@@ -234,7 +234,49 @@ int CheckArgs(int argc, char*argv[]) {
 	}
 	return 0;
 }
-	
+
+void RunTournamentTree(int nthreads) {
+	std::cout << "Entering the tournament tree with " << nthreads << " threads.\n";
+	TournamentTree tree(nthreads);
+	std::vector<std::thread> threads;
+
+	for (int i = 0; i < nthreads; i++) {
+		threads.emplace_back(critical_sectionTT, i, std::ref(tree));
+	}
+
+	for (auto& thread: threads) {
+		thread.join();
+	}		 
+}
+
+void RunTestAndSet(int nthreads) {
+	std::cout << "Entering Test and Set with " << nthreads << " threads.\n";
+	TestAndSet lock;
+	std::vector<std::thread> threads;
+	for (int i = 0; i < nthreads; i++) {
+		threads.emplace_back(critical_sectionTAS, i, std::ref(lock));
+	}
+
+	for (auto& thread : threads) {
+		thread.join();
+	}
+
+}
+
+void RunFetchAndIncrement(int nthreads) {
+	std::cout << "Entering Fetch and Increment with " << nthreads << " threads.\n";
+	FetchAndIncrement lock;
+	std::vector<std::thread> threads;
+
+	for (int i = 0; i < nthreads; i++) {
+		threads.emplace_back(critical_sectionFAI, i, std::ref(lock));
+	}
+
+	for (auto& thread: threads) {
+		thread.join();
+	}
+}
+
 int main(int argc, char *argv[]) {
 	int args_valid = CheckArgs(argc, argv);
 	if (args_valid == 1) {
@@ -246,47 +288,15 @@ int main(int argc, char *argv[]) {
 
 	switch(algorithm_type) {
 		case 0: {
-				std::cout << "Entering the tournament tree with " << nthreads << " threads.\n";
-				TournamentTree tree(nthreads);
-				std::vector<std::thread> threads;
-
-				for (int i = 0; i < nthreads; i++) {
-					threads.emplace_back(critical_sectionTT, i, std::ref(tree));
-				}
-
-				for (auto& thread: threads) {
-					thread.join();
-				}
-
-				break; 
+				RunTournamentTree(nthreads);
+				break;
 		}
 		case 1: {
-				std::cout << "Entering Test and Set with " << nthreads << " threads.\n";
-				TestAndSet lock;
-				std::vector<std::thread> threads;
-				for (int i = 0; i < nthreads; i++) {
-					threads.emplace_back(critical_sectionTAS, i, std::ref(lock));
-				}
-
-				for (auto& thread : threads) {
-					thread.join();
-				}
-
+				RunTestAndSet(nthreads);
 				break;
 		}
 		case 2: {
-				std::cout << "Entering Fetch and Increment with " << nthreads << " threads.\n";
-				FetchAndIncrement lock;
-				std::vector<std::thread> threads;
-
-				for (int i = 0; i < nthreads; i++) {
-					threads.emplace_back(critical_sectionFAI, i, std::ref(lock));
-				}
-
-				for (auto& thread: threads) {
-					thread.join();
-				}
-
+				RunFetchAndIncrement(nthreads);
 				break;
 		}
 	}
