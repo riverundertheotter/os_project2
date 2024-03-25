@@ -86,7 +86,8 @@ public:
 	std::atomic<bool> flag[2];
 	std::atomic<int> turn;
 
-	PetersonLock() : turn(0){
+	PetersonLock() {
+		turn = 0;
 		flag[0] = false;
 		flag[1] = false;
 	}
@@ -148,7 +149,37 @@ public:
 	}
 };
 
-void critical_section(int thread_id, TournamentTree& tree) {
+class TestAndSet {
+	std::atomic<bool> flag;
+
+public:
+	TestAndSet() {
+		flag = false;
+	}
+	void lock() {
+		bool expected = false;
+		// spin wait loop
+		while (!flag.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
+			expected = false; // reset expected since modified by compare_exchange_strong
+			std::this_thread::yield(); // hint to reschedule to avoid busy waiting
+		}
+	}
+
+	void unlock() {
+		flag.store(false, std::memory_order_release);
+	}
+};
+
+void critical_sectionTAS(int thread_id, TestAndSet& lock) {
+	lock.lock();
+	std::cout << "Thread " << thread_id << " has secured lock.\n";
+	// critical section
+	std::cout << "Thread " << thread_id << " is in critical section.\n";
+	lock.unlock();
+	std::cout << "Thread " << thread_id << " has released lock.\n";
+}
+
+void critical_sectionTT(int thread_id, TournamentTree& tree) {
 	tree.lock(thread_id);
 	std::cout << "Thread " << thread_id << " locked.\n";
 
@@ -173,11 +204,7 @@ int CheckArgs(int argc, char*argv[]) {
 	}
 	return 0;
 }
-
-void TestAndSet() {
-	return;
-}
-
+	
 void FetchAndIncrement() {
 	return;
 }
@@ -192,21 +219,35 @@ int main(int argc, char *argv[]) {
 	int algorithm_type = std::atoi(argv[1]);
 
 	switch(algorithm_type) {
-		case 0: 
+		case 0: {
 				std::cout << "Entering the tournament tree with " << nthreads << " threads.\n";
 				TournamentTree tree(nthreads);
 				std::vector<std::thread> threads;
 
 				for (int i = 0; i < nthreads; i++) {
-					threads.emplace_back(critical_section, i, std::ref(tree));
+					threads.emplace_back(critical_sectionTT, i, std::ref(tree));
 				}
 
 				for (auto& t: threads) {
 					t.join();
 				}
 
+				break; 
+		}
+		case 1: {
+				std::cout << "Entering Test and Set with " << nthreads << " threads.\n";
+				TestAndSet lock;
+				std::vector<std::thread> threads;
+				for (int i = 0; i < nthreads; i++) {
+					threads.emplace_back(critical_sectionTAS, i, std::ref(lock));
+				}
+
+				for (auto& thread : threads) {
+					thread.join();
+				}
+
 				break;
-	//	case 2: //Test_And_Set();
+		}
 	//	case 3: //Fetch_And_Increment();
 	}
 
