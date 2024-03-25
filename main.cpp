@@ -170,6 +170,36 @@ public:
 	}
 };
 
+class FetchAndIncrement {
+public:	
+	std::atomic<int> token{0};
+	std::atomic<int> turn{0};
+
+	void lock() {
+		// fetch current token num and increment for next thread
+		int myturn = token.fetch_add(1, std::memory_order_relaxed);
+
+		// busy wait until thread's turn
+		while (turn.load(std::memory_order_acquire) != myturn) {
+			std::this_thread::yield(); // yield to avoid busy waiting too aggressively.
+		}
+	}
+
+	void unlock() {
+		// move to next thread
+		turn.fetch_add(1, std::memory_order_release);
+	}
+};
+
+void critical_sectionFAI(int thread_id, FetchAndIncrement& lock) {
+	lock.lock();
+	std::cout << "Thread " << thread_id << " has secured lock.\n";
+	// critical section
+	std::cout << "Thread " << thread_id << " is in critical section.\n";
+	lock.unlock();
+	std::cout << "Thread " << thread_id << " has released lock.\n";
+}
+
 void critical_sectionTAS(int thread_id, TestAndSet& lock) {
 	lock.lock();
 	std::cout << "Thread " << thread_id << " has secured lock.\n";
@@ -205,10 +235,6 @@ int CheckArgs(int argc, char*argv[]) {
 	return 0;
 }
 	
-void FetchAndIncrement() {
-	return;
-}
-
 int main(int argc, char *argv[]) {
 	int args_valid = CheckArgs(argc, argv);
 	if (args_valid == 1) {
@@ -228,8 +254,8 @@ int main(int argc, char *argv[]) {
 					threads.emplace_back(critical_sectionTT, i, std::ref(tree));
 				}
 
-				for (auto& t: threads) {
-					t.join();
+				for (auto& thread: threads) {
+					thread.join();
 				}
 
 				break; 
@@ -248,7 +274,21 @@ int main(int argc, char *argv[]) {
 
 				break;
 		}
-	//	case 3: //Fetch_And_Increment();
+		case 2: {
+				std::cout << "Entering Fetch and Increment with " << nthreads << " threads.\n";
+				FetchAndIncrement lock;
+				std::vector<std::thread> threads;
+
+				for (int i = 0; i < nthreads; i++) {
+					threads.emplace_back(critical_sectionFAI, i, std::ref(lock));
+				}
+
+				for (auto& thread: threads) {
+					thread.join();
+				}
+
+				break;
+		}
 	}
 
 	return 0;
