@@ -3,73 +3,6 @@
  * River Cook
  * CS4348 Operating Systems Dr. Mittal
  *
- * Takes two arguments:
- * - Algorithm Type (int 0-2)
- * - n Threads (int 0 -> inf)
- *
- * implements mututal exclusion for n threads. using Petersen's algorithm
- * need to use the atomic library, make shared variables atomic type.
- * can generalize for n threads.
- *
- * apparently, TAS and FAI instructions are implemented somehow 
- * in the atomic library?
- * 
- * needs to run on cs1 cs2 servers
- * ----------------------------------------------------------------------------
- * Petersen's Algorithm
- *
- * shared variables: Boolean flag[2] = {false, false}; Integer turn;
- * (announce intention to other processes)
- * flag[myid] = true;
- * (yield to other processes)
- * turn = 1 - myid;
- * // wait to see if other process also wants the lock and it is not your turn
- * while (flag[1 - myid] and (turn != myid)) do 
- * begin 
- *  ; (critical section?
- * end while
- * release : flag[myid] = false
- * ----------------------------------------------------------------------------
- * Tournament Tree 
- *
- * 	With N leaf nodes
- * 		each internal tree node is an instance of Petersen's algorithm
- * 		each process is mapped to a distinct leaf node
- * 	Ascend the tree, acquiring lock at each internal node until the root
- * 	node is locked
- *
- * 	Descend the tree, releasing the lock at each internal node in the path
- * 	starting from the root node (reverse of previous step)
- * ----------------------------------------------------------------------------
- * These two methods employ read-modify-write (RMW) instructions
- * Perhaps this is what Dr. Mittal meant by the atomic library?
- * ----------------------------------------------------------------------------
- * Test and Set 
- * 
- * shared var Boolean lock = false;
- * ACQUIRE: 
- * while TAS(lock) do
- * begin 
- * 	// lock is not free
- * end while
- * RELEASE: 
- * // resets lock
- * lock = false
- * ----------------------------------------------------------------------------
- * Fetch and Increment shared var Integer token = 0, turn = 0;
- * 
- * ACQUIRE:
- * // get a token number
- * myturn = FAI(token);
- * while turn != myturn do
- * begin 
- * 	// lock is not free
- * 	;
- * end while
- *
- * RELEASE
- * // advance turn
- * turn = turn + 1;
  * ----------------------------------------------------------------------------
  */
 
@@ -80,7 +13,9 @@
 #include <vector>
 #include <cmath>
 #include <memory>
-#include "make_unique_polyfill.h"
+#include <ctype.h>
+
+#include "my_make_unique.h"
 
 class PetersonLock {
 public: 
@@ -115,12 +50,9 @@ class TournamentTree {
 	int thread_count;
 
 public:
-	//
-	// what is this line doing?
-	//
 	TournamentTree(int n) : thread_count(n) {
 		int depth = std::ceil(std::log2(n));
-		int size = std::pow(2, depth + 1) - 1; //
+		int size = std::pow(2, depth + 1) - 1;
 		for (int i = 0; i < size; i++) {
 			tree.push_back(make_unique<PetersonLock>()); // create PetersonLock instances
 		}
@@ -134,6 +66,7 @@ public:
 			tree[parent]->lock(thread_id);
 			node = parent;
 		}
+		std::cout << "Thread " << thread_id << " has acquired lock.\n";
 	}
 
 	void unlock(int thread_id) {
@@ -148,6 +81,7 @@ public:
 		for (auto it = path.rbegin(); it != path.rend(); it++) {
 			tree[*it]->unlock(thread_id);
 		}
+		std::cout << "Thread " << thread_id << " is returning the lock.\n";
 	}
 };
 
@@ -158,17 +92,19 @@ public:
 	TestAndSet() {
 		flag = false;
 	}
-	void lock() {
+	void lock(int thread_id) {
 		bool expected = false;
-		// spin wait loop
+		// busy wait loop
 		while (!flag.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
 			expected = false; // reset expected since modified by compare_exchange_strong
 			std::this_thread::yield();
 		}
+		std::cout << "Thread " << thread_id << " has secured lock.\n";
 	}
 
-	void unlock() {
+	void unlock(int thread_id) {
 		flag.store(false, std::memory_order_release);
+		std::cout << "Thread " << thread_id << " has released lock.\n";
 	}
 };
 
@@ -177,7 +113,7 @@ public:
 	std::atomic<int> token{0};
 	std::atomic<int> turn{0};
 
-	void lock() {
+	void lock(int thread_id) {
 		// fetch current token num and increment for next thread
 		int myturn = token.fetch_add(1, std::memory_order_relaxed);
 
@@ -185,38 +121,32 @@ public:
 		while (turn.load(std::memory_order_acquire) != myturn) {
 			std::this_thread::yield(); // yield to avoid busy waiting too aggressively.
 		}
+		std::cout << "Thread " << thread_id <<  " has secured lock.\n";
+
 	}
 
-	void unlock() {
+	void unlock(int thread_id) {
 		// move to next thread
 		turn.fetch_add(1, std::memory_order_release);
+		std::cout << "Thread " << thread_id << " has released lock.\n";
 	}
 };
 
 void critical_sectionFAI(int thread_id, FetchAndIncrement& lock) {
-	lock.lock();
-	std::cout << "Thread " << thread_id << " has secured lock.\n";
-	// critical section
+	lock.lock(thread_id);
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-	std::cout << "Thread " << thread_id << " has released lock.\n";
-	lock.unlock();
+	lock.unlock(thread_id);
 }
 
 void critical_sectionTAS(int thread_id, TestAndSet& lock) {
-	lock.lock();
-	std::cout << "Thread " << thread_id << " has secured lock.\n";
-	// critical section
+	lock.lock(thread_id);
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-	std::cout << "Thread " << thread_id << " has released lock.\n";
-	lock.unlock();
+	lock.unlock(thread_id);
 }
 
 void critical_sectionTT(int thread_id, TournamentTree& tree) {
 	tree.lock(thread_id);
-	std::cout << "Thread " << thread_id << " has acquired lock.\n";
-	// critical section
 	std::cout << "Thread " << thread_id << " is in critical section.\n";
-	std::cout << "Thread " << thread_id << " is returning the lock.\n";
 	tree.unlock(thread_id);
 }
 
@@ -227,9 +157,11 @@ int CheckArgs(int argc, char*argv[]) {
 		std::cout << "Usage: main <algorithm_type (int)> <nthreads(int)>\n";
 		return 1;
 	}
-	// valid argument type?
 	if (std::atoi(argv[1]) < 0 || std::atoi(argv[1]) > 2) {
 		std::cout << "Algorithm choices\n0: Test Tree\n1: Test and Set\n2:Fetch and Increment\n";
+		return 1;
+	} else if (std::atoi(argv[2]) <= 0) {
+		std::cout << "Must give 1 or more threads to main.\n";
 		return 1;
 	}
 	return 0;

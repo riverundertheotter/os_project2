@@ -1,5 +1,5 @@
-#ifndef MAKE_UNIQUE_POLYFILL_H
-#define MAKE_UNIQUE_POLYFILL_H
+#ifndef MY_MAKE_UNIQUE_H
+#define MY_MAKE_UNIQUE_H
 
 #include <memory>
 
@@ -8,5 +8,5 @@ std::unique_ptr<T> make_unique(Args&&... args) {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
-#endif // MAKE_UNIQUE_POLYFILL_H
+#endif // MY_MAKE_UNIQUE_H
 
